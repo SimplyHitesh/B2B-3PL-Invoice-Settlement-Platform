@@ -7,34 +7,50 @@
 
 This platform digitizes and automates the end-to-end **"Proof of Delivery (POD) to Cash"** lifecycle across modern enterprise supply chains and third-party logistics (3PL) operations. In traditional logistics ecosystems, paper-based Lorry Receipts (LRs), unverified cash floats, delayed gate stamps, and invoice reconciliation lag lead to high Days Sales Outstanding (DSO), friction between consignees and carriers, and revenue leakage.
 
-The frontend is architected using **Next.js (App Router)**, **Tailwind CSS**, and **shadcn/ui** primitives to support five distinct, interconnected roles:
+The frontend is architected using **Next.js 14 (App Router)**, **Tailwind CSS**, and **shadcn/ui** primitives to support distinct, interconnected roles governed by an edge route-guard middleware and administrative governance:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │                        LOGISTICS POD-TO-CASH PLATFORM ECOSYSTEM                        │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 
-  [1. Dispatch Ops] ──────▶ [2. Driver Mobile] ──────▶ [3. Internal Audit]
-   Live GPS Telematics       Outdoor HUD & Nav           50/50 Split-Pane Review
-   Driver Advance Float       Camera POD Capture          Digital Stamp & Sign Match
-   Odometer Gate Tracking     Glass Digital Sign          Financial Variance Check
-            │                         │                              │
-            │                         │                              ▼
-            │                         │                   [4. Accounts & Billing]
-            │                         │                    Unbilled Trips Queue
-            │                         │                    Consolidated GST Tax Inv
-            │                         │                    18% IGST / SAC 996511
-            │                         │                              │
-            │                         │                              ▼
-            └─────────────────────────┴──────────────────▶ [5. Client AP Portal]
-                                                           Invoice Inbox & Review
-                                                           Interactive POD Proof
-                                                           Inline Trip Dispute Flagging
+                       [Edge Route Guard: middleware.ts]
+                                       │
+            ┌──────────────────────────┴──────────────────────────┐
+            ▼                                                     ▼
+     [/login Portal]                                     [/invite/accept]
+  SSO / Credentials / Presets                         Token Validation & 5-Rule
+  Session Cookie (vecto_access_token)                 Password Policy Engine
+            │
+            ├─────────────────────────────────────────────────────┐
+            ▼                                                     ▼
+   [1. Dispatch Ops] ──────▶ [2. Driver Mobile] ──────▶ [3. Internal Audit]
+    Live GPS Telematics       Outdoor HUD & Nav           50/50 Split-Pane Review
+    Driver Advance Float       Camera POD Capture          Digital Stamp & Sign Match
+    Odometer Gate Tracking     Glass Digital Sign          Financial Variance Check
+             │                         │                              │
+             │                         │                              ▼
+             │                         │                   [4. Accounts & Billing]
+             │                         │                    Unbilled Trips Queue
+             │                         │                    Consolidated GST Tax Inv
+             │                         │                    18% IGST / SAC 996511
+             │                         │                              │
+             │                         │                              ▼
+             └─────────────────────────┴──────────────────▶ [5. Client AP Portal]
+                                                            Invoice Inbox & Review
+                                                            Interactive POD Proof
+                                                            Inline Trip Dispute Flagging
+                                                                      │
+                                                                      ▼
+                                                            [6. Admin Master Data]
+                                                            Users & Roles Directory
+                                                            Status & Invite Management
+                                                            Vehicles / Drivers / Rates
 ```
 
 ---
 
-## 1. Dispatch Manager Dashboard (`/`)
+## 1. Dispatch Manager Dashboard (`/` & `/dispatch`)
 
 ### 1.1 Core Objective
 To grant regional dispatch superintendents real-time situational awareness over active fleet deployments, monitor route progress, manage driver cash/fuel floats, and execute End-of-Day (EOD) financial closures at hub terminals.
@@ -200,13 +216,96 @@ An external, client-facing self-service portal for enterprise customers (e.g. Me
 
 ---
 
+## 6. Authentication & Route Guard Middleware (`/login` & `middleware.ts`)
+
+### 6.1 Core Objective
+To secure the enterprise platform through edge-based session verification, control unauthenticated routing, and provide operational roles with rapid, persona-based access to their respective dashboards.
+
+### 6.2 Architectural & Security Design Rationale
+* **Zero-Flash Edge Route Protection**: Next.js `middleware.ts` runs directly on edge workers ahead of page rendering. Unauthenticated HTTP requests to protected routes receive a clean `307 Temporary Redirect` before server component tree compilation begins, eliminating layout flashing or data leaks.
+* **Deep Linking Preservation**: When redirecting unauthenticated traffic to `/login`, the middleware appends the origin path as a query parameter (`/login?from=/accounts`), allowing seamless resumption post-login.
+* **Brute-Force & Credential Stuffing Prevention**: The `/login` form implements client-side rate limiting that locks submission for 30 seconds upon 3 consecutive failed attempts, displaying an active countdown timer.
+
+### 6.3 Key Features & Components
+1. **SSO / Enterprise Credentials Form**:
+   * Email and password inputs with field-level validation and animated loading state (`<Loader2>`).
+   * **Show / Hide Password Toggle**: Eye icon switcher preventing password masking errors.
+   * **Hardware Caps Lock Detection**: Alert indicator warning users when Caps Lock is active during password entry.
+   * **Remember Me**: Checkbox persisting authentication across sessions.
+2. **Demo Persona Quick-Access Strip**:
+   * Instant preset chips for **System Admin** (`admin@vecto.com`), **Dispatch Manager** (`demo@vecto.com`), **Finance Auditor** (`audit@vecto.com`), **Billing Specialist** (`billing@vecto.com`), and **Fleet Driver** (`driver@vecto.com`).
+   * Clicking a persona automatically populates credentials, establishes the `vecto_access_token` session cookie, and navigates to the respective module.
+3. **Session Cookie Management**: Sets `vecto_access_token=demo_session_token_<timestamp>; path=/; max-age=86400; SameSite=Lax`.
+
+### 6.4 State & Data Flow (Frontend Logic)
+* **Authentication State Machine**: Tracks `idle` $\rightarrow$ `authenticating` $\rightarrow$ `authenticated` or `locked_out`.
+* **Lockout Timer**: An active `setInterval` decrements `lockoutTimer` from 30 to 0 seconds, disabling form submission while active.
+
+---
+
+## 7. User Invitation & Password Policy Engine (`/invite/accept`)
+
+### 7.1 Core Objective
+To provide a secure onboarding interface where newly provisioned personnel arrive via an email invitation token to establish their corporate credentials in compliance with enterprise password security policies.
+
+### 7.2 Architectural & UI/UX Design Rationale
+* **Zero-Distraction Onboarding Container**: Focused single-card container centered vertically on a clean slate background (`bg-slate-50`).
+* **Real-time 5-Point Policy Checklist**: Rather than waiting for a form submission error, users receive instantaneous real-time visual feedback against each password rule as they type.
+
+### 7.3 Key Features & Components
+1. **Token Authentication Header**: Checks the `?token=<invite_token>` parameter and displays the user's assigned organization role and corporate email.
+2. **5-Point Dynamic Password Policy Validator**:
+   * Minimum 10 characters length (`password.length >= 10`)
+   * At least 1 uppercase letter (`/[A-Z]/.test(password)`)
+   * At least 1 lowercase letter (`/[a-z]/.test(password)`)
+   * At least 1 numeric digit (`/[0-9]/.test(password)`)
+   * At least 1 special character (`/[!@#$%^&*(),.?":{}|<>]/.test(password)`)
+   * Visual indicators transition between green checkmarks (`CheckCircle2`) and slate dots (`Circle`).
+3. **Password Strength Meter**: Real-time progress bar computing score (0–5) with contextual color transitions (`Weak` in red, `Fair` in amber, `Good` in blue, `Strong` in emerald).
+4. **Password Match Validation**: Confirms that "Confirm Password" strictly matches "New Password", displaying an inline warning upon mismatch.
+
+---
+
+## 8. Admin Master Data Management (`/admin`)
+
+### 8.1 Core Objective
+To provide platform administrators with a centralized control center to manage user permissions, activate/deactivate personnel, generate onboarding invitations, and maintain master data definitions (Vehicles, Drivers, Clients, and Freight Rate Cards).
+
+### 8.2 Architectural & UI/UX Design Rationale
+* **High-Density ERP Administration**: Retool/Linear-style compact layout maximizing information density for organizational directory management.
+* **Instant Inline Status Governance**: Direct toggle switches allowing instant deactivation of former employees or compromised accounts without navigating away from the table.
+
+### 8.3 Key Features & Components
+1. **Admin Master Navigation Sidebar**:
+   * Left navigation menu: *Users & Roles* (Active Default), *Vehicles*, *Drivers*, *Clients & Vendors*, *Rate Cards*, *Security & Audit Logs*, and *System Config*.
+2. **Users & Roles Directory Table**:
+   * Displays User Profile (Avatar + Full Name), Work Email, Role Badge (`System Admin`, `Dispatch Manager`, `Finance Auditor`, `Billing Specialist`, `Fleet Driver`), Account Status (`Active` / `Deactivated`), Last Active Timestamp, and Action Menu.
+   * **Inline Status Switch**: Interactive toggle switch updating active user permissions in place.
+   * **Role Badges**: Color-coded badges indicating role authorization scope.
+3. **Search & Role Filter Bar**:
+   * Instant substring search matching user names, emails, and roles.
+   * Role selector filter to isolate specific team disciplines.
+4. **Interactive "Invite User" Modal (`<Dialog>`)**:
+   * Form capturing Full Name, Corporate Email Address, and Role.
+   * Generates a cryptographic invitation token link (`/invite/accept?token=inv_...`).
+   * **1-Click Copy Link**: Copies the generated URL to the system clipboard.
+   * Appends the new user record to the live directory in an active state.
+5. **Master Data Tabbed Views**:
+   * **Vehicles**: Fleet registry tracking registration numbers, vehicle makes (Eicher Pro, Tata Signa), payload capacities, and telematics device IDs.
+   * **Drivers**: Driver licenses, badge credentials, linked vehicles, and contact numbers.
+   * **Clients & Vendors**: Consignee corporate entities (Metro Cash & Carry, Reliance Retail), GSTINs, and billing terms.
+   * **Rate Cards**: Base freight rates per corridor, fuel surcharges, detention/demurrage hourly penalties, and toll reimbursement policies.
+
+---
+
 ## Summary of Frontend Technologies & Standards
 
 | Layer | Technology | Usage |
 | :--- | :--- | :--- |
-| **Framework** | Next.js 14 (App Router) | File-based routing (`/`, `/driver`, `/audit`, `/accounts`, `/client-portal`) with client interactivity |
+| **Framework** | Next.js 14 (App Router) | File-based routing (`/login`, `/invite/accept`, `/dispatch`, `/driver`, `/audit`, `/accounts`, `/client-portal`, `/admin`) |
+| **Edge Security** | Next.js Middleware (`middleware.ts`) | Edge runtime cookie verification and zero-latency route redirection |
 | **Styling** | Tailwind CSS | Utility-first, enterprise high-density layouts, border systems, responsive breakpoints |
-| **Component Primitives** | shadcn/ui (Radix UI) | Accessible Dialog, Table, Card, Badge, Checkbox, Tabs, Textarea, Separator |
-| **Iconography** | `lucide-react` | Clean, standardized vector icons for logistics, navigation, and telematics |
-| **Typography** | Inter + Monospace | Standard sans-serif for UI scanning, tabular monospaced numbers for currencies and odometers |
-| **State Paradigm** | React Hooks (`useState`, `useMemo`, `useRef`) | Zero-latency client-side filtering, live GST tax calculations, and canvas drawing |
+| **Component Primitives** | shadcn/ui (Radix UI) | Accessible Dialog, Table, Card, Badge, Checkbox, Tabs, Textarea, Separator, Switch |
+| **Iconography** | `lucide-react` | Standardized vector icons for logistics, navigation, telematics, and security |
+| **Typography** | Inter + Monospace | Standard sans-serif for UI scanning, tabular monospaced numbers for currencies, odometers, and tokens |
+| **State Paradigm** | React Hooks (`useState`, `useMemo`, `useRef`) | Zero-latency client-side filtering, live GST tax calculations, canvas drawing, and password validation |
