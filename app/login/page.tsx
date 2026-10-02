@@ -100,11 +100,14 @@ export default function LoginPage() {
         return;
       }
 
+      // Set mock authentication cookie for Next.js Route Guard Middleware
+      document.cookie = "vecto_access_token=vecto_mock_jwt_session_token_2026; path=/; max-age=86400; SameSite=Lax";
+
       // Successful simulated login
       setSuccessMessage("Authentication verified. Redirecting to workspace...");
       
-      // Determine destination route based on email context or default to Dispatch Dashboard
-      let destination = "/";
+      // Determine destination route based on email context or return to /dispatch
+      let destination = "/dispatch";
       const normalizedEmail = email.toLowerCase();
       if (normalizedEmail.includes("driver")) {
         destination = "/driver";
@@ -114,6 +117,8 @@ export default function LoginPage() {
         destination = "/accounts";
       } else if (normalizedEmail.includes("metro") || normalizedEmail.includes("client") || normalizedEmail.includes("ap.")) {
         destination = "/client-portal";
+      } else if (normalizedEmail.includes("admin")) {
+        destination = "/admin";
       }
 
       setTimeout(() => {
