@@ -298,14 +298,52 @@ To provide platform administrators with a centralized control center to manage u
 
 ---
 
+## 9. API Client Architecture & Mock Service Worker (MSW)
+
+### 9.1 Core Objective
+To establish a strictly-typed, enterprise-grade data fetching layer that handles token authentication, error envelope parsing, and silent 401 token refresh out-of-the-box, backed by Mock Service Worker (MSW v3) to intercept HTTP traffic and supply realistic logistics data during development.
+
+### 9.2 API Client & Error Envelope Architecture (`lib/api/client.ts`)
+* **Typed Fetch Wrapper**: `apiClient.get<T>()`, `apiClient.post<T>()`, `apiClient.put<T>()`, `apiClient.patch<T>()`, `apiClient.delete<T>()`.
+* **Automatic Bearer Authentication**: Automatically inspects browser cookies (`vecto_access_token`) and `localStorage` to append `Authorization: Bearer <token>` to outbound requests unless explicitly bypassed (`skipAuth: true`).
+* **Standardized Error Envelope**: Parses enterprise REST error payloads matching the specification:
+  ```json
+  {
+    "error": {
+      "code": "VALIDATION_FAILED",
+      "message": "Detailed explanation of the failure",
+      "details": { ... }
+    }
+  }
+  ```
+* **Timeout & Abort Handling**: Leverages native `AbortController` with configurable timeout windows (default 15,000ms), throwing typed `ApiError(408, "REQUEST_TIMEOUT", ...)` upon deadline expiration.
+
+### 9.3 Silent Token Refresh Interceptor (`lib/api/refresh.ts`)
+* **Single-Flight Mutex Deduplication**: When multiple concurrent requests encounter HTTP 401 Unauthorized, an ongoing refresh promise queue intercepts the requests. Only a single `/api/v1/auth/refresh` network call is dispatched, preventing stampedes and refresh token invalidation.
+* **Automatic Replay**: Upon successful token acquisition, the storage layer (`document.cookie` & `localStorage`) is atomically updated, and the original pending request is re-executed with the fresh Bearer token.
+* **Fallback Eviction**: If token refresh fails (e.g. refresh token expired or revoked), tokens are purged and unauthenticated visitors are gracefully forwarded to `/login?from=<origin>`.
+
+### 9.4 MSW Handler Suite (`mocks/handlers.ts`)
+* **`POST /api/v1/auth/login`**: Simulates enterprise corporate login, issuing JWT access and refresh tokens, user profile metadata, and hub assignments.
+* **`POST /api/v1/auth/refresh`**: Validates refresh tokens and mints refreshed access credentials.
+* **`GET /api/v1/users`**: Simulates the Master Users & Roles directory with dynamic URL search query filtering (`?search=...`, `?role=...`, `?status=...`).
+* **`GET /api/v1/vehicles`**: Simulates the Fleet Registry with telematics metrics (battery health, fuel level, GPS IMEI, odometer readings).
+* **Browser Bootstrap (`components/msw-provider.tsx`)**: Integrates MSW v3 in development via Next.js App Router root layout, utilizing `worker.start({ onUnhandledFrame: 'bypass' })`.
+
+---
+
 ## Summary of Frontend Technologies & Standards
 
 | Layer | Technology | Usage |
 | :--- | :--- | :--- |
+| **Runtime & Package Manager** | Bun (v1.4+) | High-performance JS runtime, bundler, and deterministic package management (`bun.lock`) |
 | **Framework** | Next.js 14 (App Router) | File-based routing (`/login`, `/invite/accept`, `/dispatch`, `/driver`, `/audit`, `/accounts`, `/client-portal`, `/admin`) |
 | **Edge Security** | Next.js Middleware (`middleware.ts`) | Edge runtime cookie verification and zero-latency route redirection |
+| **Data Fetching** | Custom Typed API Client (`lib/api/`) | Standardized error envelope parsing, automatic Bearer injection, and single-flight 401 token refresh |
+| **Network Mocking** | Mock Service Worker (MSW v3) | Client-side service worker interceptor for Auth, Master Users, and Fleet Telematics |
 | **Styling** | Tailwind CSS | Utility-first, enterprise high-density layouts, border systems, responsive breakpoints |
 | **Component Primitives** | shadcn/ui (Radix UI) | Accessible Dialog, Table, Card, Badge, Checkbox, Tabs, Textarea, Separator, Switch |
 | **Iconography** | `lucide-react` | Standardized vector icons for logistics, navigation, telematics, and security |
 | **Typography** | Inter + Monospace | Standard sans-serif for UI scanning, tabular monospaced numbers for currencies, odometers, and tokens |
 | **State Paradigm** | React Hooks (`useState`, `useMemo`, `useRef`) | Zero-latency client-side filtering, live GST tax calculations, canvas drawing, and password validation |
+

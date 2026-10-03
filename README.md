@@ -1,6 +1,6 @@
 # Enterprise B2B & 3PL Multi-Stakeholder Dispatch, Audit, and Invoice Settlement Platform
 
-A production-ready Next.js 14, Tailwind CSS, and shadcn/ui frontend platform digitizing the complete **"Proof of Delivery (POD) to Cash"** lifecycle for enterprise logistics, fleet telematics, and third-party logistics (3PL) operations.
+A production-ready Next.js 14, Tailwind CSS, and shadcn/ui frontend platform digitizing the complete **"Proof of Delivery (POD) to Cash"** lifecycle for enterprise logistics, fleet telematics, and third-party logistics (3PL) operations. Powered by **Bun** for rapid package management and compilation.
 
 ---
 
@@ -30,35 +30,49 @@ All operational modules (`/dispatch`, `/audit`, `/accounts`, `/driver`, `/client
 
 ---
 
+## API Client Layer & Mock Service Worker (MSW)
+
+- **API Client (`lib/api/client.ts`)**: Strictly typed fetch wrapper with automatic Bearer token injection (from cookies or `localStorage`), timeout handling (`AbortController`), and standardized error envelope parsing (`{ error: { code, message, details } }`).
+- **Silent Refresh Interceptor (`lib/api/refresh.ts`)**: Intercepts `401 Unauthorized` responses and silently requests a new access token from `/api/v1/auth/refresh` using single-flight mutex deduplication to eliminate race conditions before replaying the original request.
+- **Mock Service Worker (`mocks/handlers.ts`)**: Client-side mocking layer for realistic backend testing:
+  - `POST /api/v1/auth/login`: Credential validation & JWT token generation.
+  - `POST /api/v1/auth/refresh`: Refresh token renewal.
+  - `GET /api/v1/users`: Master directory with role/status filters.
+  - `GET /api/v1/vehicles`: Live fleet registry with telematics metrics.
+
+---
+
 ## Tech Stack
 
+- **Runtime & Package Manager**: [Bun](https://bun.sh/) (Fast native bundler and package manager)
 - **Framework**: [Next.js 14](https://nextjs.org/) (App Router, Server Components & Client Interactivity)
 - **Styling**: [Tailwind CSS](https://tailwindcss.com/)
 - **Component Primitives**: [shadcn/ui](https://ui.shadcn.com/) (Radix UI)
 - **Icons**: [Lucide React](https://lucide.dev/)
+- **Mocking**: [Mock Service Worker (MSW v3)](https://mswjs.io/)
 - **Edge Middleware**: Next.js Server Runtime
 - **Language**: TypeScript
 
 ---
 
-## Quick Start
+## Quick Start (Powered by Bun)
 
 ### 1. Install Dependencies
 ```bash
-npm install
+bun install
 ```
 
 ### 2. Run Development Server
 ```bash
-npm run dev
+bun run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser. If not authenticated, the route guard will direct you to `/login`. Use the demo persona credentials or click any demo preset to log in immediately.
 
 ### 3. Build for Production
 ```bash
-npm run build
-npm run start
+bun run build
+bun run start
 ```
 
 ---
